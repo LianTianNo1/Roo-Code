@@ -84,6 +84,7 @@ import { parseXml } from "../utils/xml"
 import { readLines } from "../integrations/misc/read-lines"
 import { getWorkspacePath } from "../utils/path"
 import { isBinaryFile } from "isbinaryfile"
+import * as OpenAI from "openai"
 
 type ToolResponse = string | Array<Anthropic.TextBlockParam | Anthropic.ImageBlockParam>
 type UserContent = Array<Anthropic.Messages.ContentBlockParam>
@@ -1221,6 +1222,7 @@ export class Cline extends EventEmitter<ClineEvents> {
 			}
 			return { role, content }
 		})
+
 		const stream = this.api.createMessage(systemPrompt, cleanConversationHistory)
 		const iterator = stream[Symbol.asyncIterator]()
 
@@ -1228,8 +1230,23 @@ export class Cline extends EventEmitter<ClineEvents> {
 			// awaiting first chunk to see if it will throw an error
 			this.isWaitingForFirstChunk = true
 			const firstChunk = await iterator.next()
+
+			// 检查是否是速率限制信息
+			if (
+				firstChunk.value.type === "text" &&
+				firstChunk.value.text.includes("当前可用") &&
+				firstChunk.value.text.includes("请求")
+			) {
+				// 已经通过 yield 发送了速率限制信息
+			}
+
 			yield firstChunk.value
 			this.isWaitingForFirstChunk = false
+
+			// no error, so we can continue to yield all remaining chunks
+			// (needs to be placed outside of try/catch since it we want caller to handle errors not with api_req_failed as that is reserved for first chunk failures only)
+			// this delegates to another generator or iterable object. In this case, it's saying "yield all remaining values from this iterator". This effectively passes along all subsequent chunks from the original stream.
+			yield* iterator
 		} catch (error) {
 			// note that this api_req_failed ask is unique in that we only present this option if the api hasn't streamed any content yet (ie it fails on the first chunk due), as it would allow them to hit a retry button. However if the api failed mid-stream, it could be in any arbitrary state where some tools may have executed, so that error is handled differently and requires cancelling the task entirely.
 			if (alwaysApproveResubmit) {
@@ -1284,11 +1301,6 @@ export class Cline extends EventEmitter<ClineEvents> {
 				return
 			}
 		}
-
-		// no error, so we can continue to yield all remaining chunks
-		// (needs to be placed outside of try/catch since it we want caller to handle errors not with api_req_failed as that is reserved for first chunk failures only)
-		// this delegates to another generator or iterable object. In this case, it's saying "yield all remaining values from this iterator". This effectively passes along all subsequent chunks from the original stream.
-		yield* iterator
 	}
 
 	async presentAssistantMessage() {
@@ -2893,7 +2905,7 @@ export class Cline extends EventEmitter<ClineEvents> {
 									if (item.mimeType?.startsWith("image") && item.blob) {
 										images.push(item.blob)
 									}
-								});
+								})
 								await this.say("mcp_server_response", resourceResultPretty, images)
 								pushToolResult(formatResponse.toolResult(resourceResultPretty, images))
 								break

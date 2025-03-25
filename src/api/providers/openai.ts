@@ -28,6 +28,7 @@ export interface OpenAiHandlerOptions extends ApiHandlerOptions {}
 export class OpenAiHandler extends BaseProvider implements SingleCompletionHandler {
 	protected options: OpenAiHandlerOptions
 	private client: OpenAI
+	private isSpecialUrl: boolean = false
 
 	constructor(options: OpenAiHandlerOptions) {
 		super()
@@ -39,9 +40,9 @@ export class OpenAiHandler extends BaseProvider implements SingleCompletionHandl
 
 		try {
 			urlHost = new URL(this.options.openAiBaseUrl ?? "").host
+			// 检查是否是特殊URL
+			this.isSpecialUrl = urlHost.includes("aurorai.cn") || urlHost.includes("api-proxy.me")
 		} catch (error) {
-			// Likely an invalid `openAiBaseUrl`; we're still working on
-			// proper settings validation.
 			urlHost = ""
 		}
 
@@ -66,6 +67,12 @@ export class OpenAiHandler extends BaseProvider implements SingleCompletionHandl
 		const enabledR1Format = this.options.openAiR1FormatEnabled ?? false
 		const deepseekReasoner = modelId.includes("deepseek-reasoner") || enabledR1Format
 		const ark = modelUrl.includes(".volces.com")
+
+		if (this.isSpecialUrl) {
+			yield* this.handleSpecialUrlMessage(systemPrompt, messages)
+			return
+		}
+
 		if (modelId.startsWith("o3-mini")) {
 			yield* this.handleO3FamilyMessage(modelId, systemPrompt, messages)
 			return
@@ -287,6 +294,83 @@ export class OpenAiHandler extends BaseProvider implements SingleCompletionHandl
 					outputTokens: chunk.usage.completion_tokens || 0,
 				}
 			}
+		}
+	}
+
+	private async *handleSpecialUrlMessage(
+		systemPrompt: string,
+		messages: Anthropic.Messages.MessageParam[],
+	): ApiStream {
+		const modelId = this.options.openAiModelId ?? ""
+		const apiKey = this.options.openAiApiKey ?? ""
+
+		const requestData = {
+			model: modelId,
+			messages: [{ role: "system", content: systemPrompt }, ...convertToOpenAiMessages(messages)],
+			stream: true,
+		}
+
+		try {
+			const response = await axios.post(this.options.openAiBaseUrl + "/chat/completions", requestData, {
+				headers: {
+					Authorization: `Bearer ${apiKey}`,
+					"Content-Type": "application/json",
+				},
+				responseType: "stream",
+			})
+
+			// 处理速率限制信息
+			const rateLimitInfo = {
+				limit: response.headers["ratelimit-limit"],
+				remaining: response.headers["ratelimit-remaining"],
+				reset: response.headers["ratelimit-reset"],
+			}
+
+			// 发送速率限制信息
+			if (rateLimitInfo.limit && rateLimitInfo.remaining && rateLimitInfo.reset) {
+				const resetTime = new Date(Date.now() + parseInt(rateLimitInfo.reset) * 1000)
+				const resetTimeStr = resetTime.toLocaleString("zh-CN", {
+					year: "numeric",
+					month: "2-digit",
+					day: "2-digit",
+					hour: "2-digit",
+					minute: "2-digit",
+					second: "2-digit",
+				})
+				yield {
+					type: "text",
+					text: `当前可用 ${rateLimitInfo.remaining}/${rateLimitInfo.limit} 请求, 次数将在 ${rateLimitInfo.reset}s后重置，${resetTimeStr} 重置完毕`,
+				}
+			}
+
+			// 处理流式响应
+			for await (const chunk of response.data) {
+				const lines = chunk.toString().split("\n")
+				for (const line of lines) {
+					if (line.startsWith("data: ")) {
+						const data = line.slice(6)
+						if (data === "[DONE]") {
+							continue
+						}
+						try {
+							const parsed = JSON.parse(data)
+							if (parsed.choices?.[0]?.delta?.content) {
+								yield {
+									type: "text",
+									text: parsed.choices[0].delta.content,
+								}
+							}
+						} catch (e) {
+							console.error("Error parsing chunk:", e)
+						}
+					}
+				}
+			}
+		} catch (error) {
+			if (axios.isAxiosError(error)) {
+				throw new Error(`API request failed: ${error.response?.data?.error?.message || error.message}`)
+			}
+			throw error
 		}
 	}
 }

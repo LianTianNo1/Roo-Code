@@ -339,9 +339,30 @@ export class OpenAiHandler extends BaseProvider implements SingleCompletionHandl
 				})
 				yield {
 					type: "text",
-					text: `当前可用 ${rateLimitInfo.remaining}/${rateLimitInfo.limit} 请求, 次数将在 ${rateLimitInfo.reset}s后重置，${resetTimeStr} 重置完毕`,
+					text: `###--\n当前可用 ${rateLimitInfo.remaining}/${rateLimitInfo.limit} 请求\n次数将在 ${rateLimitInfo.reset}s后重置\n${resetTimeStr} 重置完毕\n请在微信里回复1回复1回复1，用完请回复2回复2回复2!!!\n###--\n`,
 				}
 			}
+
+			// 计算输入token数量的估算
+			let inputTokensEstimate = 0
+			// 系统提示的token
+			inputTokensEstimate += this.estimateTokenCount(systemPrompt)
+			// 消息的token
+			for (const msg of messages) {
+				if (typeof msg.content === "string") {
+					inputTokensEstimate += this.estimateTokenCount(msg.content)
+				} else if (Array.isArray(msg.content)) {
+					for (const part of msg.content) {
+						if (part.type === "text") {
+							inputTokensEstimate += this.estimateTokenCount(part.text || "")
+						}
+					}
+				}
+			}
+
+			// 跟踪输出token数
+			let outputTokensCount = 0
+			let fullResponseText = ""
 
 			// 处理流式响应
 			for await (const chunk of response.data) {
@@ -355,10 +376,17 @@ export class OpenAiHandler extends BaseProvider implements SingleCompletionHandl
 						try {
 							const parsed = JSON.parse(data)
 							if (parsed.choices?.[0]?.delta?.content) {
+								const contentChunk = parsed.choices[0].delta.content
+								fullResponseText += contentChunk
 								yield {
 									type: "text",
-									text: parsed.choices[0].delta.content,
+									text: contentChunk,
 								}
+							}
+
+							// 如果流中包含usage信息，直接使用
+							if (parsed.usage) {
+								yield this.processUsageMetrics(parsed.usage, this.getModel().info)
 							}
 						} catch (e) {
 							console.error("Error parsing chunk:", e)
@@ -366,12 +394,29 @@ export class OpenAiHandler extends BaseProvider implements SingleCompletionHandl
 					}
 				}
 			}
+
+			// 计算输出token的估算
+			outputTokensCount = this.estimateTokenCount(fullResponseText)
+
+			// 流结束后发送使用信息
+			yield {
+				type: "usage",
+				inputTokens: inputTokensEstimate,
+				outputTokens: outputTokensCount,
+			}
 		} catch (error) {
 			if (axios.isAxiosError(error)) {
 				throw new Error(`API request failed: ${error.response?.data?.error?.message || error.message}`)
 			}
 			throw error
 		}
+	}
+
+	// 简单估计token数量的辅助方法
+	private estimateTokenCount(text: string): number {
+		if (!text) return 0
+		// 简单估计：大约每4个字符算1个token
+		return Math.ceil(text.length / 4)
 	}
 }
 

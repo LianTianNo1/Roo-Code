@@ -823,6 +823,55 @@ export const ChatRowContent = ({
 							checkpoint={message.checkpoint}
 						/>
 					)
+				case "rate_limit":
+					const rateLimit = JSON.parse(message.text || "{}")
+					return (
+						<div
+							style={{
+								display: "flex",
+								flexDirection: "column",
+								backgroundColor: "var(--vscode-inputValidation-warningBackground)",
+								padding: 8,
+								borderRadius: 3,
+								gap: 4,
+								fontSize: 12,
+							}}>
+							<div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+								<i
+									className="codicon codicon-warning"
+									style={{
+										fontSize: 16,
+										color: "var(--vscode-warningForeground)",
+									}}
+								/>
+								<span style={{ fontWeight: 500, color: "var(--vscode-warningForeground)" }}>
+									Aurorai API 速率限制提醒
+								</span>
+							</div>
+							<div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+								<div>
+									当前可用请求：{rateLimit.remaining}/{rateLimit.limit}
+								</div>
+								<div>重置倒计时：{rateLimit.reset}秒</div>
+								<div>预计重置时间：{rateLimit.resetTime}</div>
+								<div
+									style={{
+										color: "#fff",
+										fontWeight: 500,
+										fontSize: 12,
+										marginTop: "0 auto",
+										background: "#9c0000",
+										padding: 10,
+										borderRadius: "2px",
+									}}>
+									请您微信里面回复 1 <br />
+									告诉他你已经开始使用了
+									<br />
+									回复 2 告诉他你已经用完了
+								</div>
+							</div>
+						</div>
+					)
 				default:
 					return (
 						<>

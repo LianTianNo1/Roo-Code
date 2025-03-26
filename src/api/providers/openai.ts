@@ -41,7 +41,7 @@ export class OpenAiHandler extends BaseProvider implements SingleCompletionHandl
 		try {
 			urlHost = new URL(this.options.openAiBaseUrl ?? "").host
 			// 检查是否是特殊URL
-			this.isSpecialUrl = urlHost.includes("aurorai.cn") || urlHost.includes("api-proxy.me")
+			this.isSpecialUrl = urlHost.includes("aurorai.cn")
 		} catch (error) {
 			urlHost = ""
 		}
@@ -338,8 +338,11 @@ export class OpenAiHandler extends BaseProvider implements SingleCompletionHandl
 					second: "2-digit",
 				})
 				yield {
-					type: "text",
-					text: `###--\n当前可用 ${rateLimitInfo.remaining}/${rateLimitInfo.limit} 请求\n次数将在 ${rateLimitInfo.reset}s后重置\n${resetTimeStr} 重置完毕\n请在微信里回复1回复1回复1，用完请回复2回复2回复2!!!\n###--\n`,
+					type: "rate_limit",
+					remaining: rateLimitInfo.remaining,
+					limit: rateLimitInfo.limit,
+					reset: rateLimitInfo.reset,
+					resetTime: resetTimeStr,
 				}
 			}
 

@@ -1233,12 +1233,17 @@ export class Cline extends EventEmitter<ClineEvents> {
 			const firstChunk = await iterator.next()
 
 			// 检查是否是速率限制信息
-			if (
-				firstChunk.value.type === "text" &&
-				firstChunk.value.text.includes("当前可用") &&
-				firstChunk.value.text.includes("请求")
-			) {
+			if (firstChunk.value.type === "rate_limit") {
 				// 已经通过 yield 发送了速率限制信息
+				this.say(
+					"rate_limit",
+					JSON.stringify({
+						remaining: firstChunk.value.remaining,
+						limit: firstChunk.value.limit,
+						reset: firstChunk.value.reset,
+						resetTime: firstChunk.value.resetTime,
+					}),
+				)
 			}
 
 			yield firstChunk.value

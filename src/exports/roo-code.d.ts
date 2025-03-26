@@ -135,6 +135,7 @@ export type ClineSay =
 	| "new_task"
 	| "checkpoint_saved"
 	| "rooignore_error"
+	| "rate_limit"
 
 export interface ClineMessage {
 	ts: number

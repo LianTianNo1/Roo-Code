@@ -859,7 +859,7 @@ export const ChatRowContent = ({
 										color: "#fff",
 										fontWeight: 500,
 										fontSize: 12,
-										marginTop: "0 auto",
+										margin: "0 auto",
 										background: "#9c0000",
 										padding: 10,
 										borderRadius: "2px",
